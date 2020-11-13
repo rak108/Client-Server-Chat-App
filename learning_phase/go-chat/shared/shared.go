@@ -31,3 +31,10 @@ func CheckError(err error) {
 }
 
 // Other shared function definitions, if required
+
+func Paddingto256(message string) string {
+	for len(message) < 256 {
+		message += "\r"
+	}
+	return message
+}

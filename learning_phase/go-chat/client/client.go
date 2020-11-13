@@ -20,8 +20,8 @@ package client
 import (
 	"bufio"
 	"context"
-	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -33,41 +33,32 @@ import (
 This is the struct that characterizes each client process
 */
 type client struct {
-	Username       string // If not specified, a random string is chosen using RandSeq() in shared.go
-	ServerPassword string // The server password specified by the user
-	ServerHost     string // ip:port or :port, by default, it is "0.0.0.0:4545"
+	Username   string // If not specified, a random string is chosen using RandSeq() in shared.go
+	ServerHost string // ip:port or :port, by default, it is "0.0.0.0:4545"
 
 }
 
-/*
-type message_struct struct {
-	Type     int    // can define 0 = unicast, 1 = broadcast
-	Sender   string // The username of the sender
-	Receiver string //Username of receiver
-	Message  string // The string containing the message
-
-}
-*/
-func Client(password string, host string, username string) *client {
+func Client(host string, username string) *client {
 
 	/*
 		An instance of the 'client' struct is created, initialized with given
 		or the default data(if the user hasn't specified the data).
 	*/
-
-	if len(username) == 0 {
-		username := shared.RandSeq(8)
-		user := &client{username, password, host}
-		return user
+	var uname string
+	if username == "-" {
+		uname = shared.RandSeq(8)
+	} else {
+		uname = username
 	}
 
-	user := &client{username, password, host}
-
-	return user
+	return &client{
+		Username:   uname,
+		ServerHost: host,
+	}
 
 }
 
-func getServerMessage(conn net.Conn, rcvd_msg chan string, exit_chan chan bool, terminate_cha chan bool) {
+func getServerMessage(conn net.Conn, rcvd_msg chan string, exit_chan chan bool) {
 
 	/**
 	Function parameter description:
@@ -84,31 +75,28 @@ func getServerMessage(conn net.Conn, rcvd_msg chan string, exit_chan chan bool, 
 	(or an EOF is received, which will cause an error). Then it should check for errors and handle them appropriately.
 	Finally it should write the message as a string (instead of a byte array) to the rcvd_msg channel.
 	*/
-	finalmessage := ""
-	//var receivedmessagebytes bytes.Buffer
-	count := 0
-	for count < 256 {
-		receivedmessage := bufio.NewReader(conn)
-		receivedmessagebytes, err := receivedmessage.ReadBytes('\n')
-		count += binary.Size(receivedmessagebytes)
-		stringmessage, _ := receivedmessage.ReadString('\n')
-		finalmessage += stringmessage
-		if err != nil {
-			exit_chan <- true
-			shared.CheckError(err)
-			break
-		}
+
+	finalmessagebytes := make([]byte, 256)
+	_, err := io.ReadFull(conn, finalmessagebytes)
+	if err != nil && err == io.EOF {
+		//shared.CheckError(err)
+		exit_chan <- true
+		rcvd_msg <- ""
+		return
 	}
+	message := string(finalmessagebytes)
+	finalmessage := strings.Trim(message, "\r\n")
 	splitmessage := strings.Split(finalmessage, "~")
-	if splitmessage[0] == "3" { //checks if terminate message is sent by server
-		terminate_cha <- true
+	if splitmessage[0] == "0" { //checks if terminate message is sent by server
+		exit_chan <- true
+		finalmessage = splitmessage[1]
 	}
 
 	rcvd_msg <- finalmessage
 
 }
 
-func (cli *client) listenForServerMessages(ctx context.Context, conn net.Conn, term_chan chan bool, final_term_chan chan bool) {
+func (cli *client) listenForServerMessages(ctx context.Context, conn net.Conn, final_term_chan chan bool) {
 
 	/**
 	Method parameter description:
@@ -126,28 +114,32 @@ func (cli *client) listenForServerMessages(ctx context.Context, conn net.Conn, t
 	msg_channel (in the latter case msg_channel wouldn't be required). Should also be able to receive termination signals
 	from getServerMessage and cancellation of context from Run(), and terminate accordingly.
 	*/
-	rcvd_msg := make(chan string)
-	exit_chan := make(chan bool)
-	terminate_chan := make(chan bool)
-	exit_chan <- false
+	rcvd_msg := make(chan string, 1)
+	//exit_chan := make(chan bool)
+	term_chan := make(chan bool, 1)
+	//exit_chan <- false
 	//check := <-exit_chan
 	//var message string
 	for {
-		go getServerMessage(conn, rcvd_msg, exit_chan, terminate_chan)
+		getServerMessage(conn, rcvd_msg, term_chan)
 		message := <-rcvd_msg
-		fmt.Println("\n", message)
+		if message != "" {
+			fmt.Println("\n" + message + "\n")
+		}
 		select {
 		case <-ctx.Done():
-			fmt.Println("Client-Side Termination")
 			final_term_chan <- true
 			return
 
-		case <-terminate_chan:
+		case check := <-term_chan:
 			{
-				final_term_chan <- true
-				fmt.Println("Server-Side Termination")
-				return
+				if check == true {
+					final_term_chan <- true
+					break
+				}
 			}
+
+		default:
 
 		}
 
@@ -163,11 +155,10 @@ func getClientMessage(sc *bufio.Scanner, rcvd_msg chan string) {
 	*/
 	var finalmessage string
 	for sc.Scan() {
-		message := sc.Text()
-		finalmessage += message
+		finalmessage = sc.Text()
+		rcvd_msg <- finalmessage
+		return
 	}
-	rcvd_msg <- finalmessage
-
 }
 
 func (cli *client) listenForClientMessages(ctx context.Context, sc *bufio.Scanner, conn net.Conn, final_term_chan chan bool) {
@@ -177,10 +168,10 @@ func (cli *client) listenForClientMessages(ctx context.Context, sc *bufio.Scanne
 	be parsed and be made to follow the protocol format, and sent to the server. Should be able to handle cancellation of context
 	from Run() too.
 	*/
-	rcvd_msg := make(chan string)
+	rcvd_msg := make(chan string, 1)
 	for {
-		go getClientMessage(sc, rcvd_msg)
-		//var structure message_struct
+
+		getClientMessage(sc, rcvd_msg)
 		var sendmessage string
 		select {
 		case <-ctx.Done():
@@ -190,25 +181,31 @@ func (cli *client) listenForClientMessages(ctx context.Context, sc *bufio.Scanne
 			splitmessage := strings.Split(message, "~")
 			mtype := splitmessage[0]
 			switch mtype {
-			case "Authenticate":
-				sendmessage = string("0~" + cli.Username + "~" + splitmessage[1])
 			case "Unicast":
-				//structure = message_struct{0, cli.Username, splitmessage[1], splitmessage[2]}
-				sendmessage = string("1~" + cli.Username + "~" + splitmessage[1] + "~" + splitmessage[2])
+				if len(splitmessage) == 1 {
+					fmt.Println("\nWrong format, Enter receiver username and contents of message.")
+					continue
+				}
+				sendmessage = string("1~" + splitmessage[1] + "~" + splitmessage[2])
 			case "Broadcast":
-				//structure = message_struct{1, cli.Username, "N/A", splitmessage[1]}
-				sendmessage = string("2~" + cli.Username + "~N/A~" + splitmessage[1])
+				if len(splitmessage) == 1 {
+					fmt.Println("\nWrong format, Enter contents of message.")
+					continue
+				}
+				sendmessage = string("2~" + splitmessage[1])
+
 			case "Terminate":
-				//structure = message_struct{2, cli.Username, "N/A", "N/A"}
-				sendmessage = string("3~" + cli.Username + "~N/A~N/A")
+				sendmessage = string("3~")
+				final_term_chan <- true
+			default:
+				fmt.Println("\n Please follow format!")
+				continue
+
 			}
 
 		}
-		//feedbuffer := new(bytes.Buffer)
-		//gobobj := gob.NewEncoder(feedbuffer)
-		//gobobj.Encode(structure)
-		//conn.Write(feedbuffer.Bytes())
-		conn.Write([]byte(sendmessage + "\n"))
+		sendmessage = shared.Paddingto256(sendmessage)
+		conn.Write([]byte(sendmessage))
 
 	}
 
@@ -231,34 +228,54 @@ func (cli *client) Run(ctx context.Context, main_term_chan chan bool) {
 	(the signal will be caught by main() and propogated to this function) as well as if the server tells the client to terminate
 	for whatever reason. You should listen for and handle both.
 	*/
+re:
 	var addr string
-	fmt.Println("\n Hi " + cli.Username + "! Enter host to connect to: ")
-	fmt.Scanln(addr)
-	cli.ServerHost = "0.0.0.0" + addr
-	//fmt.Println("\n Enter server password: ")
-	//fmt.Scanln(authenticatepassword)
-	//if authenticatepassword == password { }
-	conn, err := net.Dial("tcp", cli.ServerHost)
-	if err != nil {
-		shared.CheckError(err)
-	}
-	scann := bufio.NewScanner(os.Stdin)
-	final_term_chan := make(chan bool)
-	term_chan := make(chan bool)
-	go cli.listenForClientMessages(ctx, scann, conn, final_term_chan)
-	go cli.listenForServerMessages(ctx, conn, term_chan, final_term_chan)
+	var pwd string
 
+	fmt.Println("\n Hi " + cli.Username + "! Enter host to connect to: ")
+	fmt.Scanln(&addr)
+	cli.ServerHost = addr
+	conn, err := net.Dial("tcp", ":"+cli.ServerHost)
+
+	if err != nil {
+		//shared.CheckError(err)
+		fmt.Println("\nFailed to connect to host. Try again.")
+		goto re
+	}
+	fmt.Println("\nFirst, Kindly authenticate yourself. Enter server password: ")
+	fmt.Scanln(&pwd)
+	message := "0~" + cli.Username + "~" + pwd
+	sendmessage := shared.Paddingto256(message)
+	conn.Write([]byte(sendmessage))
+	scann := bufio.NewScanner(os.Stdin)
+	term_chan_client := make(chan bool, 1)
+	term_chan_server := make(chan bool, 1)
+	//=term_chan := make(chan bool)
+	go cli.listenForClientMessages(ctx, scann, conn, term_chan_client)
+	go cli.listenForServerMessages(ctx, conn, term_chan_server)
 	select {
 	case <-ctx.Done():
-		fmt.Println("Client exited program")
 		main_term_chan <- true
 		return
 
-	case <-final_term_chan:
+	case check := <-term_chan_client:
 		{
+			if check == true {
+				select {
+				case <-term_chan_server:
+					break
+				}
+				main_term_chan <- true
+				break
+			}
+		}
+
+	case checkagain := <-term_chan_server:
+		if checkagain == true {
+			term_chan_client <- true
+			fmt.Println("\nServer disconnected...Connection closed.")
 			main_term_chan <- true
-			fmt.Println("Server-Side Termination")
-			return
+			break
 		}
 
 	}
