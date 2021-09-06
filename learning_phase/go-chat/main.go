@@ -28,19 +28,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rak108/Distributed-DNS/learning_phase/go-chat/client"
-	"github.com/rak108/Distributed-DNS/learning_phase/go-chat/server"
-)
-
-var (
-// Define variables for command line parameters here if using init() function
-/**
-Ideally, we would have command line parameters for the following purposes:
-- For starting the server process
-- For setting the server properties like IP address, port number and password
-- For setting the parameters with which the client connects to the server like the
-  username, target server IP address, port number and the password.
-*/
+	"github.com/rak108/Client-Server-Chat-App/learning_phase/go-chat/client"
+	"github.com/rak108/Client-Server-Chat-App/learning_phase/go-chat/server"
 )
 
 func main() {
@@ -63,16 +52,16 @@ func main() {
 	if choice == 1 {
 		var port string
 		var pwd string
-		fmt.Println("\n Enter port you want the server to listen on (For default 4545, enter '-'): ")
+		fmt.Println("\n Enter port you want the server to listen on (For default 4545, enter ''): ")
 		fmt.Scanln(&port)
-		fmt.Println("\n Enter server password (For default '1234', enter '-' ): ")
+		fmt.Println("\n Enter server password (For default '1234', enter '' ): ")
 		fmt.Scanln(&pwd)
 		ser := server.Server(pwd, port)
 		go ser.Run(ctx)
 		for {
 		}
 	} else if choice == 2 {
-		fmt.Println("Launching client...\nWelcome! Enter your custom username (max 8 characters), or for a random one, enter '-': ")
+		fmt.Println("Launching client...\nWelcome! Enter your custom username (max 8 characters), or for a random one, enter '': ")
 		var username string
 		fmt.Scanln(&username)
 		cli := client.Client("", username)

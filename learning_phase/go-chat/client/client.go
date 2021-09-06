@@ -26,7 +26,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/rak108/Distributed-DNS/learning_phase/go-chat/shared"
+	"github.com/rak108/Client-Server-Chat-App/learning_phase/go-chat/shared"
 )
 
 /*
@@ -45,7 +45,7 @@ func Client(host string, username string) *client {
 		or the default data(if the user hasn't specified the data).
 	*/
 	var uname string
-	if username == "-" {
+	if username == "" {
 		uname = shared.RandSeq(8)
 	} else {
 		uname = username
@@ -79,7 +79,6 @@ func getServerMessage(conn net.Conn, rcvd_msg chan string, exit_chan chan bool) 
 	finalmessagebytes := make([]byte, 256)
 	_, err := io.ReadFull(conn, finalmessagebytes)
 	if err != nil && err == io.EOF {
-		//shared.CheckError(err)
 		exit_chan <- true
 		rcvd_msg <- ""
 		return
@@ -115,11 +114,7 @@ func (cli *client) listenForServerMessages(ctx context.Context, conn net.Conn, f
 	from getServerMessage and cancellation of context from Run(), and terminate accordingly.
 	*/
 	rcvd_msg := make(chan string, 1)
-	//exit_chan := make(chan bool)
 	term_chan := make(chan bool, 1)
-	//exit_chan <- false
-	//check := <-exit_chan
-	//var message string
 	for {
 		getServerMessage(conn, rcvd_msg, term_chan)
 		message := <-rcvd_msg
@@ -261,10 +256,7 @@ re:
 	case check := <-term_chan_client:
 		{
 			if check == true {
-				select {
-				case <-term_chan_server:
-					break
-				}
+
 				main_term_chan <- true
 				break
 			}

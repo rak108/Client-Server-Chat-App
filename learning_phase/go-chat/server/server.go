@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rak108/Distributed-DNS/learning_phase/go-chat/shared"
+	"github.com/rak108/Client-Server-Chat-App/learning_phase/go-chat/shared"
 )
 
 // This struct characterizes the server process
@@ -42,12 +42,12 @@ func Server(pass string, address string) *server {
 	*/
 	var password string
 	var serveraddress string
-	if pass == "-" {
+	if pass == "" {
 		password = "1234"
 	} else {
 		password = pass
 	}
-	if address == "-" {
+	if address == "" {
 		serveraddress = "4545"
 	} else {
 		serveraddress = address
@@ -253,7 +253,7 @@ func (ser *server) Run(ctx context.Context) {
 	// Bind a socket to a port and start listening on it. Use listenForConnections
 	// and listen for new connections written to the channel, and appropriately spawn
 	// handleClient. Also handle cancellation of context sent from main.
-	ser.ServerHost = ":" + ser.ServerHost
+	ser.ServerHost = ":" + (ser.ServerHost)
 	tcpAddr, err := net.ResolveTCPAddr("tcp4", ser.ServerHost)
 	if err != nil {
 		shared.CheckError(err)
